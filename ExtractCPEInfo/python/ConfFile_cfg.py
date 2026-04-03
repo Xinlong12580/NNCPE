@@ -26,7 +26,7 @@ process.load("RecoVertex.BeamSpotProducer.BeamSpot_cfi")
 process.load('Configuration.StandardSequences.RawToDigi_cff')
 process.load('Configuration.StandardSequences.L1Reco_cff')
 process.load('Configuration.StandardSequences.Reconstruction_cff')
-process.load('Demo.ExtractCPEInfo.extractCPEInfo_cfi')
+process.load('NNCPE.ExtractCPEInfo.extractCPEInfo_cfi')
 #process.load('RecoLocalTracker.SiPixelRecHits.plugins.extractCPEInfo_cfi')
 
 #process.load('Configuration.StandardSequences.AlCaRecoStreams_cff')
