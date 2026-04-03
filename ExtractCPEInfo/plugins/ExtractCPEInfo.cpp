@@ -106,8 +106,9 @@ public:
 private:
 	void beginJob();
 	void analyze(const edm::Event&, const edm::EventSetup&);
-	void endJob();
-	void endRun();
+	void endRun(edm::Run const&, edm::EventSetup const&) override;
+    void endJob();
+	//void endRun();
 	void ResetVars();
 
 	TFile *out_File; 
@@ -132,7 +133,7 @@ private:
     int Tx_size = TXSIZE;
     int Ty_size = TYSIZE;
     
-    float nSimHit;
+    int nSimHit;
 	float SimHit_x[SIMHITPERCLMAX];    // X local position of simhit 
 	float SimHit_y[SIMHITPERCLMAX];
      
@@ -199,12 +200,12 @@ void ExtractCPEInfo::ResetVars(){
     }
 
     for (int i = 0; i < SIMHITPERCLMAX; i++){
-        SimHit_x[i] = 0.f; 
-        SimHit_y[i] = 0.f; 
-	    Generic_dx[i] = 0.f;
-        Generic_dxPull[i] = 0.f; 
-	    Generic_dy[i] = 0.f;
-        Generic_dyPull[i] = 0.f;
+        SimHit_x[i] = std::numeric_limits<float>::max(); 
+        SimHit_y[i] = std::numeric_limits<float>::max(); 
+	    Generic_dx[i] = std::numeric_limits<float>::max();
+        Generic_dxPull[i] = std::numeric_limits<float>::max(); 
+	    Generic_dy[i] = std::numeric_limits<float>::max();
+        Generic_dyPull[i] = std::numeric_limits<float>::max();
     }
      
 }
@@ -223,6 +224,7 @@ trackerHitAssociatorConfig_(config, consumesCollector()) {
     out_Tree->Branch("Index_track", &Index_track, "Index_track/I");
     out_Tree->Branch("CotAlpha",&CotAlpha, "CotAlpha/F");
     out_Tree->Branch("CotBeta",&CotBeta, "CotBeta/F");
+    
     out_Tree->Branch("CotAlpha_detAngle", &CotAlpha_detAngle, "CotAlpha_detAngle/F");
     out_Tree->Branch("CotBeta_detAngle", &CotBeta_detAngle, "CotBeta_detAngle/F");
     out_Tree->Branch("TXSIZE", &Tx_size, "TXSIZE/I");
@@ -231,16 +233,23 @@ trackerHitAssociatorConfig_(config, consumesCollector()) {
     out_Tree->Branch("Cluster_x", &Cluster_x, "Cluster_x[TXSIZE]/F");
     out_Tree->Branch("Cluster_raw", &Cluster_raw, "Cluster_raw[TXSIZE][TYSIZE]/F");
     out_Tree->Branch("Cluster_xRaw", &Cluster_xRaw, "Cluster_xRaw[TXSIZE]/F");
-
-
-    out_Tree->Branch("nSimHit", &nSimHit, "nSimHit/I");
-    out_Tree->Branch("SimHit_x", &SimHit_x, "SimHit_x[nSimHit]/F");
-    out_Tree->Branch("SimHit_y", &SimHit_y, "SimHit_y[nSimHit]/F");
-
+    
     out_Tree->Branch("Generic_x", &Generic_x, "Generic_x/F");
     out_Tree->Branch("Generic_y", &Generic_y, "Generic_y/F");
     out_Tree->Branch("Generic_xError", &Generic_xError, "Generic_xError/F");
     out_Tree->Branch("Generic_yError", &Generic_yError, "Generic_yError/F");
+    /*
+    out_Tree->Branch("nSimHit", &nSimHit, "nSimHit/I");
+    out_Tree->Branch("SimHit_x", &SimHit_x, "SimHit_x[10]/F");
+    out_Tree->Branch("SimHit_y", &SimHit_y, "SimHit_y[10]/F");
+    out_Tree->Branch("Generic_dx", &Generic_dx, "Generic_dx[10]/F");
+    out_Tree->Branch("Generic_dy", &Generic_dy, "Generic_dy[10]/F");
+    out_Tree->Branch("Generic_dxPull", &Generic_dxPull, "Generic_dxPull[10]/F");
+    out_Tree->Branch("Generic_dyPull", &Generic_dyPull, "Generic_dyPull[10]/F");
+    */
+    out_Tree->Branch("nSimHit", &nSimHit, "nSimHit/I");
+    out_Tree->Branch("SimHit_x", &SimHit_x, "SimHit_x[nSimHit]/F");
+    out_Tree->Branch("SimHit_y", &SimHit_y, "SimHit_y[nSimHit]/F");
     out_Tree->Branch("Generic_dx", &Generic_dx, "Generic_dx[nSimHit]/F");
     out_Tree->Branch("Generic_dy", &Generic_dy, "Generic_dy[nSimHit]/F");
     out_Tree->Branch("Generic_dxPull", &Generic_dxPull, "Generic_dxPull[nSimHit]/F");
@@ -256,11 +265,11 @@ void ExtractCPEInfo::endJob() {
 	printf("in end job\n");
 
 }
-void ExtractCPEInfo::endRun() {
+void ExtractCPEInfo::endRun(edm::Run const&, edm::EventSetup const&) {
+	printf("in end run\n");
     out_File->cd();
     out_Tree->Write();
     out_File->Close();
-	printf("in end run\n");
 
 }
 
@@ -269,7 +278,7 @@ void ExtractCPEInfo::endRun() {
 
 
 void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& setup) {
-
+    std::cout<<"TEST"<<std::endl;
 	edm::ESHandle<TrackerTopology> tTopoHandle = setup.getHandle(TrackerTopoToken);
 	auto const& tkTpl = *tTopoHandle;
 	
@@ -552,10 +561,13 @@ void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& set
 
             } // end sim hit loop
             nSimHit = iSimHit;
-            for(int i = 0;i<SIMHITPERCLMAX;i++){
+            std::cout<<nSimHit<<std::endl;
+            for(int i = 0; i < 10; i++)
+                std::cout<<"SimHit_x "<<SimHit_x[i]<<std::endl;
+            for(int i = 0;i<nSimHit;i++){
                 Generic_dx[i] = Generic_x - SimHit_x[i];
                 Generic_dy[i] = Generic_y - SimHit_y[i];
-                Generic_dyPull[i] = Generic_dx[i]/Generic_xError;
+                Generic_dxPull[i] = Generic_dx[i]/Generic_xError;
                 Generic_dyPull[i] = Generic_dy[i]/Generic_yError;
             } 
             count++;
