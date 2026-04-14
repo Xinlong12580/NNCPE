@@ -116,15 +116,14 @@ private:
 
     std::string fname;
 
-    static const int MAXCLUSTER = 80000;
-    static const int SIMHITPERCLMAX = 10;             // max number of simhits associated with a cluster/rechit
-
+    static const int SIMHITPERCLMAX = 10; // max number of simhits associated with a cluster/rechit
+    static constexpr float CHARGENORM = 25000.f; // value to divide cluster charge by
     int Track_idx;
 
     // BPIX
     int Layer;        // increasing r
     int Ladder;       // increasing phi
-    int Module;       // increasing z (this value is always 1 for FPIX, so only track it for BPIX)
+    int Module;       // increasing z (this value is always 1 for FPIX)
 
     // FPIX
     int Side;         // FPIX- or FPIX+
@@ -143,14 +142,16 @@ private:
     int Cluster_size;
     int Cluster_sizeX;
     int Cluster_sizeY;
-    float Cluster_raw[TXSIZE][TYSIZE];
+
+    float Cluster_charge; // total cluster charge, in units of CHARGENORM electrons
+    //"Raw" charge is units of CHARGENORM electrons
+    float Cluster_raw[TXSIZE][TYSIZE]; // TXSIZE and TYSIZE are cluster matrix dimensions (defined for template reco, we use the same dimensions)
     float Cluster_xRaw[TXSIZE];
     float Cluster_yRaw[TYSIZE];
-    float Cluster[TXSIZE][TYSIZE];
+    //Normalized so that the max pixel charge is 1 in both the 2D ckluster and the 1D projections
+    float Cluster[TXSIZE][TYSIZE]; // Normalized so that the max pixel charge in the cluster is 1
     float Cluster_x[TXSIZE];
     float Cluster_y[TYSIZE];
-    int Tx_size = TXSIZE;
-    int Ty_size = TYSIZE;
 
     int nSimHit;
     float SimHit_x[SIMHITPERCLMAX];    // X local position of simhit
@@ -217,12 +218,14 @@ void ExtractCPEInfo::ResetVars(){
     Col_offset = -1;
     ClusterCenter_x = 0.f;
     ClusterCenter_y = 0.f;
+    Cluster_charge = 0.f;
     nSimHit = 0;
     Generic_x = 0.f;
     Generic_y = 0.f;
     Generic_xError = 0.f;
     Generic_yError = 0.f;
-    for(int i = 0; i < TXSIZE; i++){
+
+    for(int i = 0; i < TXSIZE; i++){ 
         Cluster_xRaw[i] = 0.f;
         Cluster_x[i] = 0.f;
         for(int j = 0; j < TYSIZE; j++){
@@ -270,6 +273,7 @@ trackerHitAssociatorConfig_(config, consumesCollector()) {
     out_Tree->Branch("Col_offset", &Col_offset, "Col_offset/I");
     out_Tree->Branch("ClusterCenter_x", &ClusterCenter_x, "ClusterCenter_x/F");
     out_Tree->Branch("ClusterCenter_y", &ClusterCenter_y, "ClusterCenter_y/F");
+    out_Tree->Branch("Cluster_charge", &Cluster_charge, "Cluster_charge/F");
 
 
     out_Tree->Branch("CotAlpha_detAngle", &CotAlpha_detAngle, "CotAlpha_detAngle/F");
@@ -321,7 +325,6 @@ void ExtractCPEInfo::endRun(edm::Run const&, edm::EventSetup const&) {
 
 
 void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& setup) {
-    std::cout<<"TEST"<<std::endl;
     edm::ESHandle<TrackerTopology> tTopoHandle = setup.getHandle(TrackerTopoToken);
     auto const& tkTpl = *tTopoHandle;
 
@@ -338,8 +341,11 @@ void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& set
         return;
     }
 
-    float clusbuf_temp[TXSIZE][TYSIZE];
+    float clusbuf_temp[TXSIZE][TYSIZE]; // Holds cluster charge before unpacking wide pixels
     int idx = -1;
+    int double_pixel_buffer_size = 5; // we don't expect more than 2 double pixels in either direction, 5 for safety margin
+    int double_row[double_pixel_buffer_size], double_col[double_pixel_buffer_size];
+
     for (auto const& track : *tracks) {
         idx++;
         auto const& trajParams = track.extra()->trajParams();
@@ -357,10 +363,9 @@ void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& set
             auto id = hit->geographicalId();
             DetId hit_detId = hit->geographicalId();
 
-            // check that we are in the pixel detector
             auto subdetid = (id.subdetId());
 
-            if (subdetid == PixelSubdetector::PixelBarrel) { //&& subdetid != PixelSubdetector::PixelEndcap)
+            if (subdetid == PixelSubdetector::PixelBarrel) {
                 Layer  = tkTpl.pxbLayer(hit_detId);
                 Ladder = tkTpl.pxbLadder(hit_detId);
                 Module = tkTpl.pxbModule(hit_detId);
@@ -382,16 +387,13 @@ void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& set
                 continue;
             }
 
-            //Layer = tkTpl.pxbLayer(hit_detId);
-
             auto pixhit = dynamic_cast<const SiPixelRecHit*>(hit->hit());
             if (!pixhit)
                 continue;
 
-            //some initialization
-            for(int j=0; j<TXSIZE; ++j) {
-                for(int i=0; i<TYSIZE; ++i) {
-                    clusbuf_temp[j][i] = 0.;
+            for(int i=0; i<TXSIZE; ++i) {
+                for(int j=0; j<TYSIZE; ++j) {
+                    clusbuf_temp[i][j] = 0.;
                 }
             }
 
@@ -404,31 +406,23 @@ void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& set
             Col_offset = cluster.minPixelCol();
             int row_offset = Row_offset;
             int col_offset = Col_offset;
-            // CALCULATING ANGLE
             auto const& ltp = trajParams[h];
-
             CotAlpha = ltp.dxdz();
             CotBeta = ltp.dydz();
-            //https://github.com/cms-sw/cmssw/blob/master/RecoLocalTracker/SiPixelRecHits/src/PixelCPEBase.cc#L263-L272
-            LocalPoint trk_lp = ltp.position();
-            float trk_lp_x = trk_lp.x();
-            float trk_lp_y = trk_lp.y();
-
             auto geomdetunit = dynamic_cast<const PixelGeomDetUnit*>(pixhit->detUnit());
             if(!geomdetunit) continue;
             auto const& topol = geomdetunit->specificTopology();
 
             auto const& theOrigin = geomdetunit->surface().toLocal(GlobalPoint(0, 0, 0));
-            LocalPoint lp2 = topol.localPosition(MeasurementPoint(cluster.x(), cluster.y()));
+            LocalPoint lp2 = topol.localPosition(MeasurementPoint(cluster.x(), cluster.y())); // cluster.x() and .y() are the cluster charge barycenters
             auto gvx = lp2.x() - theOrigin.x();
             auto gvy = lp2.y() - theOrigin.y();
             auto gvz = -1.f /theOrigin.z();
-            // calculate angles
             CotAlpha_detAngle = gvx * gvz;
             CotBeta_detAngle = gvy * gvz;
 
             // LOADING CLUSTER
-            int mrow = 0, mcol = 0;
+            int mrow = 0, mcol = 0; //maximum row and column of the cluster
             for (int i = 0; i != cluster.size(); ++i) {
                 auto pix = cluster.pixel(i);
                 int irow = int(pix.x);
@@ -436,9 +430,9 @@ void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& set
                 mrow = std::max(mrow, irow);
                 mcol = std::max(mcol, icol);
             }
-            mrow -= row_offset;
+            mrow -= row_offset; // convert to local cluster coordinates, offset is the min row/col of the cluster
             mrow += 1;
-            mrow = std::min(mrow, TXSIZE);
+            mrow = std::min(mrow, TXSIZE); // limit cluster size to the dimensions of the input matrix for the NN / template reco
             mcol -= col_offset;
             mcol += 1;
             mcol = std::min(mcol, TYSIZE);
@@ -446,9 +440,9 @@ void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& set
             assert(mcol > 0);
 
             int n_double_x = 0, n_double_y = 0;
-            int clustersize = 0;
-            int double_row[5], double_col[5];
-            for(int i=0;i<5;i++){
+            int clustersize = 0; // number of pixels in the cluster, wide pixels still count as 1 here!
+
+            for(int i=0;i<double_pixel_buffer_size;i++){
                 double_row[i]=-1;
                 double_col[i]=-1;
             }
@@ -459,16 +453,16 @@ void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& set
                 int irow = int(pix.x) - row_offset;
                 int icol = int(pix.y) - col_offset;
                 if ((irow >= mrow) || (icol >= mcol)) continue;
-                if ((int)pix.x == 79 || (int)pix.x == 80){
-                    int flag=0;
-                    for(int j=0;j<5;j++){
+                if ((int)pix.x == 79 || (int)pix.x == 80){ // Phase-1 specific wide-pixel rows
+                    int flag=0; // check if this row is already counter as a double pixel row
+                    for(int j=0;j<n_double_x;j++){
                         if(irow==double_row[j]) {flag = 1; break;}
                     }
                     if(flag!=1) {double_row[n_double_x]=irow; n_double_x++;}
                 }
-                if ((int)pix.y % 52 == 0 || (int)pix.y % 52 == 51){
-                    int flag=0;
-                    for(int j=0;j<5;j++){
+                if ((int)pix.y % 52 == 0 || (int)pix.y % 52 == 51){ // Phase-1 specific wide-pixel columns
+                    int flag=0;  // check if this column is already counter as a double pixel column
+                    for(int j=0;j<n_double_y;j++){
                         if(icol==double_col[j]) {flag = 1; break;}
                     }
                     if(flag!=1) {double_col[n_double_y]=icol; n_double_y++;}
@@ -480,65 +474,51 @@ void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& set
 
             if(clustersize==0){printf("EMPTY CLUSTER, SKIPPING\n");continue;}
             if(n_double_x>2 or n_double_y>2){
-                continue; //currently can only deal with single double pix
+                continue; //currently only dealing with up to 2 double pixels in either direction. Covers most (all?) cases
             }
-            n_double_x=0; n_double_y=0;
+
             int clustersize_x = cluster.sizeX(), clustersize_y = cluster.sizeY();
-            Cluster_size = cluster.size();
-            Cluster_sizeX = clustersize_x;
-            Cluster_sizeY = clustersize_y;
+            Cluster_size = cluster.size(); // this is the total number of pixels in the cluster, wide pixels still count as 1
+            Cluster_sizeX = clustersize_x + n_double_x; // if there is a double pixel in x/y, the effective cluster size in x/y is increased by 1, we will unpack wide pixels later and fill the input matrix accordingly
+            Cluster_sizeY = clustersize_y + n_double_y;
             int mid_x = round(float(irow_sum)/float(clustersize));
             int mid_y = round(float(icol_sum)/float(clustersize));
-            int offset_x = 6 - mid_x;
-            int offset_y = 10 - mid_y;
+            int offset_x = TXSIZE/2 - mid_x; // 13/2 -> 6 - mid_x
+            int offset_y = TYSIZE/2 - mid_y; // 21/2 -> 10 - mid_y
+
+            if(clustersize_x > TXSIZE or clustersize_y > TYSIZE) continue;
 
             MeasurementPoint meas_center_matrix(row_offset + mid_x + 0.5f, col_offset + mid_y + 0.5f);
             LocalPoint local_center_matrix = topol.localPosition(meas_center_matrix);
-            ClusterCenter_x = local_center_matrix.x();
+            ClusterCenter_x = local_center_matrix.x(); // in local coordinates (cm)
             ClusterCenter_y = local_center_matrix.y();
 
             for (int i = 0; i < cluster.size(); ++i) {
                 auto pix = cluster.pixel(i);
-                int irow = int(pix.x) - row_offset + offset_x;
+                int irow = int(pix.x) - row_offset + offset_x; // place the cluster center in the middle of the input matrix (TXSIZE/2, TYSIZE/2)
                 int icol = int(pix.y) - col_offset + offset_y;
 
                 if ((irow >= mrow+offset_x) || (icol >= mcol+offset_y)){
                     printf("irow or icol exceeded, SKIPPING. irow = %i, mrow = %i, offset_x = %i,icol = %i, mcol = %i, offset_y = %i\n",irow,mrow,offset_x,icol,mcol,offset_y);
                     continue;
                 }
-                if ((int)pix.x == 79 || (int)pix.x == 80){
-                    int flag=0;
-                    for(int j=0;j<5;j++){
-                        if(irow==double_row[j]) {flag = 1; break;}
-                    }
-                    if(flag!=1) {double_row[n_double_x]=irow; n_double_x++;}
-                }
-                if ((int)pix.y % 52 == 0 || (int)pix.y % 52 == 51 ){
-                    int flag=0;
-                    for(int j=0;j<5;j++){
-                        if(icol==double_col[j]) {flag = 1; break;}
-                    }
-                    if(flag!=1) {double_col[n_double_y]=icol; n_double_y++;}
-                }
-                clusbuf_temp[irow][icol] = float(pix.adc)/25000.;
+                clusbuf_temp[irow][icol] = float(pix.adc)/CHARGENORM; //pix.adc is actually in units of electrons
+                Cluster_charge += float(pix.adc)/CHARGENORM;
             }
 
-            if(n_double_x==1 && clustersize_x>12) {printf("clustersize_x > 12, SKIPPING\n"); continue;} // NEED TO FIX CLUSTERSIZE COMPUTATION
-            if(n_double_x==2 && clustersize_x>11) {printf("clustersize_x > 11, SKIPPING\n"); continue;}
-            if(n_double_y==1 && clustersize_y>20) {printf("clustersize_y = %i > 20, SKIPPING\n", clustersize_y);continue;}
-            if(n_double_y==2 && clustersize_y>19) {printf("clustersize_y = %i > 19, SKIPPING\n", clustersize_y);continue;}
-            //first deal with double width pixels in x
+            //Expand double width rows
             int k=0,m=0;
             for(int i=0;i<TXSIZE;i++){
-                if(i==double_row[m] and clustersize_x>1){
-                    printf("TREATING DPIX%i IN X\n",m+1);
+                if(m < n_double_x && i==double_row[m]){
                     for(int j=0;j<TYSIZE;j++){
                         Cluster_raw[i][j]=clusbuf_temp[k][j]/2.;
                         Cluster_raw[i+1][j]=clusbuf_temp[k][j]/2.;
                     }
                     i++;
-                    if(m==0 and n_double_x==2) {
-                        double_row[1]++;
+                    if(m==0 && n_double_x==2) {
+                        double_row[1]++; // If two rows are wide, they will be next to each other, so the second wide row will be right after the first one and needs to be shifted by 1 after the first one is expanded
+                        m++;
+                    } else if(m > 0) {
                         m++;
                     }
                 }
@@ -550,22 +530,27 @@ void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& set
                 k++;
             }
             k=0;m=0;
+
+            // Set clusbuf to the original cluster with expanded rows
             for(int i=0;i<TXSIZE;i++){
                 for(int j=0;j<TYSIZE;j++){
                     clusbuf_temp[i][j]=Cluster_raw[i][j];
                     Cluster_raw[i][j]=0.;
                 }
             }
+
+            // Expand double width columns
             for(int j=0;j<TYSIZE;j++){
-                if(j==double_col[m] and clustersize_y>1){
-                    printf("TREATING DPIX%i IN Y\n",m+1);
+                if(m < n_double_y && j==double_col[m]){
                     for(int i=0;i<TXSIZE;i++){
                         Cluster_raw[i][j]=clusbuf_temp[i][k]/2.;
                         Cluster_raw[i][j+1]=clusbuf_temp[i][k]/2.;
                     }
                     j++;
-                    if(m==0 and n_double_y==2) {
+                    if(m==0 && n_double_y==2) {
                         double_col[1]++;
+                        m++;
+                    } else if(m > 0) {
                         m++;
                     }
                 }
@@ -589,7 +574,9 @@ void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& set
             for(int j = 0; j < TYSIZE; j++){
                 if(Cluster_yRaw[j] > cluster_max) cluster_max = Cluster_yRaw[j] ;
             }
-
+            
+            assert(cluster_max > 0);
+            assert(cluster_max_2d > 0);
             //normalize 2d inputs
             for(int i = 0;i < TXSIZE; i++){
                 for (int j = 0; j < TYSIZE; j++)
@@ -610,27 +597,22 @@ void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& set
             //get sim hits
 
             std::vector<PSimHit> vec_simhits_assoc;
-            TrackerHitAssociator *associate(0);
-
-            associate = new TrackerHitAssociator(event,trackerHitAssociatorConfig_);
+            std::unique_ptr<TrackerHitAssociator> associate(new TrackerHitAssociator(event,trackerHitAssociatorConfig_));
             vec_simhits_assoc.clear();
             vec_simhits_assoc = associate->associateHit(*pixhit);
 
             int iSimHit = 0;
 
-            for (std::vector<PSimHit>::const_iterator m = vec_simhits_assoc.begin();
-                m < vec_simhits_assoc.end() && iSimHit < SIMHITPERCLMAX; ++m)
+            for (std::vector<PSimHit>::const_iterator sim_it = vec_simhits_assoc.begin();
+                sim_it < vec_simhits_assoc.end() && iSimHit < SIMHITPERCLMAX; ++sim_it)
             {
-                SimHit_x[iSimHit]    = ( m->entryPoint().x() + m->exitPoint().x() ) / 2.0;
-                SimHit_y[iSimHit]    = ( m->entryPoint().y() + m->exitPoint().y() ) / 2.0;
+                SimHit_x[iSimHit]    = ( sim_it->entryPoint().x() + sim_it->exitPoint().x() ) / 2.0;
+                SimHit_y[iSimHit]    = ( sim_it->entryPoint().y() + sim_it->exitPoint().y() ) / 2.0;
 
                 ++iSimHit;
 
             } // end sim hit loop
             nSimHit = iSimHit;
-            std::cout<<nSimHit<<std::endl;
-            for(int i = 0; i < 10; i++)
-                std::cout<<"SimHit_x "<<SimHit_x[i]<<std::endl;
             for(int i = 0;i<nSimHit;i++){
                 Generic_dx[i] = Generic_x - SimHit_x[i];
                 Generic_dy[i] = Generic_y - SimHit_y[i];
