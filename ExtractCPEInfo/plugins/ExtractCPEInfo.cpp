@@ -110,6 +110,9 @@ private:
     void endJob();
     //void endRun();
     void ResetVars();
+    static bool isWideRow(int absRow);
+    static bool isWideCol(int absCol);
+    static bool isWidePixel(int absRow, int absCol);
 
     TFile *out_File; 
     TTree *out_Tree;
@@ -195,6 +198,18 @@ void ExtractCPEInfo::fillDescriptions(edm::ConfigurationDescriptions& descriptio
     desc.add<bool>("associatePixel");
     desc.add<bool>("associateStrip");
     descriptions.addWithDefaultLabel(desc);
+}
+
+bool ExtractCPEInfo::isWideRow(int absRow) {
+    return absRow == 79 || absRow == 80;
+}
+
+bool ExtractCPEInfo::isWideCol(int absCol) {
+    return (absCol % 52 == 0) || (absCol % 52 == 51);
+}
+
+bool ExtractCPEInfo::isWidePixel(int absRow, int absCol) {
+    return isWideRow(absRow) || isWideCol(absCol);
 }
 
 void ExtractCPEInfo::ResetVars(){
@@ -452,20 +467,24 @@ void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& set
                 auto pix = cluster.pixel(i);
                 int irow = int(pix.x) - row_offset;
                 int icol = int(pix.y) - col_offset;
+                int absRow = int(pix.x);
+                int absCol = int(pix.y);
                 if ((irow >= mrow) || (icol >= mcol)) continue;
-                if ((int)pix.x == 79 || (int)pix.x == 80){ // Phase-1 specific wide-pixel rows
-                    int flag=0; // check if this row is already counter as a double pixel row
-                    for(int j=0;j<n_double_x;j++){
-                        if(irow==double_row[j]) {flag = 1; break;}
+                if (isWidePixel(absRow, absCol)) {
+                    if (isWideRow(absRow)) { // Phase-1 specific wide-pixel rows
+                        int flag=0; // check if this row is already counter as a double pixel row
+                        for(int j=0;j<n_double_x;j++){
+                            if(irow==double_row[j]) {flag = 1; break;}
+                        }
+                        if(flag!=1) {double_row[n_double_x]=irow; n_double_x++;}
                     }
-                    if(flag!=1) {double_row[n_double_x]=irow; n_double_x++;}
-                }
-                if ((int)pix.y % 52 == 0 || (int)pix.y % 52 == 51){ // Phase-1 specific wide-pixel columns
-                    int flag=0;  // check if this column is already counter as a double pixel column
-                    for(int j=0;j<n_double_y;j++){
-                        if(icol==double_col[j]) {flag = 1; break;}
+                    if (isWideCol(absCol)) { // Phase-1 specific wide-pixel columns
+                        int flag=0;  // check if this column is already counter as a double pixel column
+                        for(int j=0;j<n_double_y;j++){
+                            if(icol==double_col[j]) {flag = 1; break;}
+                        }
+                        if(flag!=1) {double_col[n_double_y]=icol; n_double_y++;}
                     }
-                    if(flag!=1) {double_col[n_double_y]=icol; n_double_y++;}
                 }
                 irow_sum+=irow;
                 icol_sum+=icol;
@@ -477,21 +496,38 @@ void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& set
                 continue; //currently only dealing with up to 2 double pixels in either direction. Covers most (all?) cases
             }
 
-            int clustersize_x = cluster.sizeX(), clustersize_y = cluster.sizeY();
             Cluster_size = cluster.size(); // this is the total number of pixels in the cluster, wide pixels still count as 1
-            Cluster_sizeX = clustersize_x + n_double_x; // if there is a double pixel in x/y, the effective cluster size in x/y is increased by 1, we will unpack wide pixels later and fill the input matrix accordingly
-            Cluster_sizeY = clustersize_y + n_double_y;
-            int mid_x = round(float(irow_sum)/float(clustersize));
+            Cluster_sizeX = cluster.sizeX() + n_double_x; // if there is a double pixel in x/y, the effective cluster size in x/y is increased by 1, we will unpack wide pixels later and fill the input matrix accordingly
+            Cluster_sizeY = cluster.sizeY() + n_double_y;
+            int mid_x = round(float(irow_sum)/float(clustersize)); //pixel that will be flagged as the center in the input matrix
             int mid_y = round(float(icol_sum)/float(clustersize));
-            int offset_x = TXSIZE/2 - mid_x; // 13/2 -> 6 - mid_x
-            int offset_y = TYSIZE/2 - mid_y; // 21/2 -> 10 - mid_y
 
-            if(clustersize_x > TXSIZE or clustersize_y > TYSIZE) continue;
+            float pitch_center_x = 0.5f;
+            float pitch_center_y = 0.5f;
+            // if the center pixel is wide, it gets split into two, so the center of the selected mid-pix will actually be at the quarter of the origina, wide pixel's pitch
+            if (isWideRow(mid_x+row_offset)) pitch_center_x = 0.25f; 
+            if (isWideCol(mid_y+col_offset)) pitch_center_y = 0.25f;
+            MeasurementPoint meas_center_pix(row_offset + mid_x + pitch_center_x, col_offset + mid_y + pitch_center_y); // lower-left corner
+            LocalPoint local_center_pix = topol.localPosition(meas_center_pix);
+            ClusterCenter_x = local_center_pix.x();
+            ClusterCenter_y = local_center_pix.y();
 
-            MeasurementPoint meas_center_matrix(row_offset + mid_x + 0.5f, col_offset + mid_y + 0.5f);
-            LocalPoint local_center_matrix = topol.localPosition(meas_center_matrix);
-            ClusterCenter_x = local_center_matrix.x(); // in local coordinates (cm)
-            ClusterCenter_y = local_center_matrix.y();
+            int n_wide_before_mid_x = 0; //number of wide pixels in x/y before the cluster center, compensates the center shift due to expansion of wide rows/columns before the selected center
+            int n_wide_before_mid_y = 0;
+            for (int i = 0; i < n_double_x; ++i) {
+                if (double_row[i] < mid_x) {
+                    ++n_wide_before_mid_x;
+                }
+            }
+            for (int i = 0; i < n_double_y; ++i) {
+                if (double_col[i] < mid_y) {
+                    ++n_wide_before_mid_y;
+                }
+            }
+            int offset_x = TXSIZE/2 - mid_x - n_wide_before_mid_x; // compensate expansion shift from wide rows before the selected center, ensures that center pixel will end up at (TXSIZE/2, TYSIZE/2) in the input matrix after wide pixel expansion
+            int offset_y = TYSIZE/2 - mid_y - n_wide_before_mid_y;
+
+            if(Cluster_sizeX > TXSIZE or Cluster_sizeY > TYSIZE) continue;
 
             for (int i = 0; i < cluster.size(); ++i) {
                 auto pix = cluster.pixel(i);
@@ -506,17 +542,24 @@ void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& set
                 Cluster_charge += float(pix.adc)/CHARGENORM;
             }
 
+            int double_row_centered[double_pixel_buffer_size];
+            int double_col_centered[double_pixel_buffer_size];
+            for (int i = 0; i < double_pixel_buffer_size; ++i) {
+                double_row_centered[i] = double_row[i] + offset_x;
+                double_col_centered[i] = double_col[i] + offset_y;
+            }
+
             //Expand double width rows
             int k=0,m=0;
             for(int i=0;i<TXSIZE;i++){
-                if(m < n_double_x && i==double_row[m]){
+                if(m < n_double_x && i==double_row_centered[m]){
                     for(int j=0;j<TYSIZE;j++){
                         Cluster_raw[i][j]=clusbuf_temp[k][j]/2.;
                         Cluster_raw[i+1][j]=clusbuf_temp[k][j]/2.;
                     }
                     i++;
                     if(m==0 && n_double_x==2) {
-                        double_row[1]++; // If two rows are wide, they will be next to each other, so the second wide row will be right after the first one and needs to be shifted by 1 after the first one is expanded
+                        double_row_centered[1]++; // If two rows are wide, they will be next to each other, so the second wide row will be right after the first one and needs to be shifted by 1 after the first one is expanded
                         m++;
                     } else if(m > 0) {
                         m++;
@@ -541,14 +584,14 @@ void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& set
 
             // Expand double width columns
             for(int j=0;j<TYSIZE;j++){
-                if(m < n_double_y && j==double_col[m]){
+                if(m < n_double_y && j==double_col_centered[m]){
                     for(int i=0;i<TXSIZE;i++){
                         Cluster_raw[i][j]=clusbuf_temp[i][k]/2.;
                         Cluster_raw[i][j+1]=clusbuf_temp[i][k]/2.;
                     }
                     j++;
                     if(m==0 && n_double_y==2) {
-                        double_col[1]++;
+                        double_col_centered[1]++;
                         m++;
                     } else if(m > 0) {
                         m++;
