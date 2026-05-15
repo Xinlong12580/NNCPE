@@ -14,6 +14,7 @@ cd ../../
 
 
 # Run the step2. The py file will be modified to have the new name
+# This also sets the Run number, to avoid weirdness when running the EDAnalyzer on the output later
 sed -i 's/IJOB/${i}/g' step2_DIGI_L1_DIGI2RAW_HLT.py
 cmsRun step2_DIGI_L1_DIGI2RAW_HLT.py
 

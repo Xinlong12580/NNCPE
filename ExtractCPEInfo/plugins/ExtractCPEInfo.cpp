@@ -39,7 +39,7 @@
 #include "FWCore/Framework/interface/Event.h"
 #include "FWCore/Framework/interface/Frameworkfwd.h"
 #include "FWCore/Framework/interface/MakerMacros.h"
-#include "FWCore/Framework/interface/stream/EDAnalyzer.h"
+#include "FWCore/Framework/interface/one/EDAnalyzer.h"
 #include "FWCore/ParameterSet/interface/ParameterSet.h"
 #include "FWCore/MessageLogger/interface/MessageLogger.h"
 
@@ -94,20 +94,18 @@ struct CacheData {
     CacheData()  {}
 };
 
-class ExtractCPEInfo : public edm::stream::EDAnalyzer<edm::GlobalCache<CacheData>> {
+// Change the class declaration:
+class ExtractCPEInfo : public edm::one::EDAnalyzer<> {
 public:
-    explicit ExtractCPEInfo(const edm::ParameterSet&, const CacheData*);
+    explicit ExtractCPEInfo(const edm::ParameterSet&);  // no CacheData* arg
     ~ExtractCPEInfo(){};
 
     static void fillDescriptions(edm::ConfigurationDescriptions&);
-    // two additional static methods for handling the global cache
-    static std::unique_ptr<CacheData> initializeGlobalCache(const edm::ParameterSet&);
-    static void globalEndJob(const CacheData*); // does it have to be static
+
 private:
-    void beginJob();
-    void analyze(const edm::Event&, const edm::EventSetup&);
-    void endRun(edm::Run const&, edm::EventSetup const&) override;
-    void endJob();
+    void beginJob() override;
+    void analyze(const edm::Event&, const edm::EventSetup&) override;
+    void endJob() override;
     //void endRun();
     void ResetVars();
     static bool isWideRow(int absRow);
@@ -177,16 +175,7 @@ private:
     TrackerHitAssociator::Config trackerHitAssociatorConfig_;
 };
 
-std::unique_ptr<CacheData> ExtractCPEInfo::initializeGlobalCache(const edm::ParameterSet& config)
-{
-    CacheData* cacheData = new CacheData();
-    return std::unique_ptr<CacheData>(cacheData);
-}
 
-void ExtractCPEInfo::globalEndJob(const CacheData* cacheData) {
-    printf("in global end job\n");
-
-}
 void ExtractCPEInfo::fillDescriptions(edm::ConfigurationDescriptions& descriptions) {
     // defining this function will lead to a *_cfi file being generated when compiling
     edm::ParameterSetDescription desc;
@@ -264,16 +253,19 @@ void ExtractCPEInfo::ResetVars(){
 
 }
 
-ExtractCPEInfo::ExtractCPEInfo(const edm::ParameterSet& config, const CacheData* cacheData)
-:fname(config.getParameter<std::string>("fname")),fTrackCollectionLabel(config.getUntrackedParameter<InputTag>("trackCollectionLabel", edm::InputTag("generalTracks"))),
-trackerHitAssociatorConfig_(config, consumesCollector()) {
+ExtractCPEInfo::ExtractCPEInfo(const edm::ParameterSet& config)
+: fname(config.getParameter<std::string>("fname")),
+  fTrackCollectionLabel(config.getUntrackedParameter<InputTag>("trackCollectionLabel", edm::InputTag("generalTracks"))),
+  trackerHitAssociatorConfig_(config, consumesCollector()) {
     TrackToken              = consumes <std::vector<reco::Track>>(fTrackCollectionLabel) ;
     TrackerTopoToken        = esConsumes <TrackerTopology, TrackerTopologyRcd>();
     ResetVars();
 
     count = 0;
     out_File = new TFile(fname.c_str(), "RECREATE");
+    out_File->cd();
     out_Tree = new TTree("Events", "Tree For NN Training");
+    out_Tree->SetDirectory(out_File); 
     out_Tree->Branch("Layer", &Layer, "Layer/I");
     out_Tree->Branch("Track_idx", &Track_idx, "Track_idx/I");
     out_Tree->Branch("Ladder", &Ladder, "Ladder/I");
@@ -325,16 +317,20 @@ void ExtractCPEInfo::beginJob() {
 
 void ExtractCPEInfo::endJob() {
     printf("in end job\n");
-
-}
-void ExtractCPEInfo::endRun(edm::Run const&, edm::EventSetup const&) {
-    printf("in end run\n");
     out_File->cd();
     out_Tree->Write();
     out_File->Close();
 
 }
+/*
+void ExtractCPEInfo::endRun(edm::Run const&, edm::EventSetup const&) {
+    printf("in end run\n");
+    //out_File->cd();
+    //out_Tree->Write();
+    //out_File->Close();
 
+}
+*/
 
 
 

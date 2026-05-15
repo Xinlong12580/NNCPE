@@ -26,7 +26,7 @@ Then
 python3 Submit_step2.py --nJobs [number of jobs submitted in step1]
 ```
 
-The output can be hadded before passing to the EDAnalyzer
+The output can be combined before passing to the EDAnalyzer
 ```
-hadd step2_DIGI_L1_DIGI2RAW_HLT.root step2_DIGI_L1_DIGI2RAW_HLT_*.root
+edmCopyPickMerge inputFiles_load=files.txt outputFile=merged.root
 ```

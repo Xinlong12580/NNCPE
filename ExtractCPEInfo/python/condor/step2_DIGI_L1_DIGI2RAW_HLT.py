@@ -55,6 +55,9 @@ process.source = cms.Source("PoolSource",
     secondaryFileNames = cms.untracked.vstring()
 )
 
+# Custom run number to avoid issues 
+process.source.setRunNumber = cms.untracked.uint32(IJOB)
+
 process.options = cms.untracked.PSet(
     IgnoreCompletely = cms.untracked.vstring(),
     Rethrow = cms.untracked.vstring(),
