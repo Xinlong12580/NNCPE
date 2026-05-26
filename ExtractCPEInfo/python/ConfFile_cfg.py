@@ -60,7 +60,7 @@ process.source = cms.Source("PoolSource",
 fileNames=cms.untracked.vstring("file:step2_DIGI_L1_DIGI2RAW_HLT.root"),
 #fileNames=cms.untracked.vstring("file:TTbar_13TeV_TuneCUETP8M1_cfi_MC_500_phase1_2018_realistic.root"),
 #eventsToSkip=cms.untracked.VEventRange('1:8-1:10','1:67-1:69','1:388-1:390'),
-eventsToSkip=cms.untracked.VEventRange('1:94-1:96','1:173-1:175'),
+#eventsToSkip=cms.untracked.VEventRange('1:94-1:96','1:173-1:175'),
 # data
   #fileNames=cms.untracked.vstring("file:52A3B4C3-328E-E811-85D6-FA163E3AB92A.root")
 #skipEvents=cms.untracked.uint32(385)
