@@ -120,6 +120,7 @@ private:
 
     static const int SIMHITPERCLMAX = 10; // max number of simhits associated with a cluster/rechit
     static constexpr float CHARGENORM = 25000.f; // value to divide cluster charge by
+    int Event_idx = 0;
     int Track_idx;
 
     // BPIX
@@ -309,6 +310,7 @@ trackerHitAssociatorConfig_(config, consumesCollector()) {
     out_File = new TFile(fname.c_str(), "RECREATE");
     out_Tree = new TTree("Events", "Tree For NN Training");
     out_Tree->Branch("Layer", &Layer, "Layer/I");
+    out_Tree->Branch("Event_idx", &Event_idx, "Event_idx/I");
     out_Tree->Branch("Track_idx", &Track_idx, "Track_idx/I");
     out_Tree->Branch("Ladder", &Ladder, "Ladder/I");
     out_Tree->Branch("Module", &Module, "Module/I");
@@ -665,20 +667,21 @@ void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& set
                 k++;
             }
             //compute the 1d projection & compute cluster max
-            float cluster_max = 0., cluster_max_2d = 0.;
+            float cluster_max_x = 0., cluster_max_y = 0. , cluster_max_2d = 0.;
             for(int i = 0;i < TXSIZE; i++){
                 for(int j = 0; j < TYSIZE; j++){
                     Cluster_xRaw[i] += Cluster_raw[i][j];
                     Cluster_yRaw[j] += Cluster_raw[i][j];
                     if(Cluster_raw[i][j]>cluster_max_2d) cluster_max_2d = Cluster_raw[i][j];
                 }
-                if(Cluster_xRaw[i] > cluster_max) cluster_max = Cluster_xRaw[i] ;
+                if(Cluster_xRaw[i] > cluster_max_x) cluster_max_x = Cluster_xRaw[i] ;
             }
             for(int j = 0; j < TYSIZE; j++){
-                if(Cluster_yRaw[j] > cluster_max) cluster_max = Cluster_yRaw[j] ;
+                if(Cluster_yRaw[j] > cluster_max_y) cluster_max_y = Cluster_yRaw[j] ;
             }
             
-            assert(cluster_max > 0);
+            assert(cluster_max_x > 0);
+            assert(cluster_max_y > 0);
             assert(cluster_max_2d > 0);
             //normalize 2d inputs
             for(int i = 0;i < TXSIZE; i++){
@@ -686,10 +689,10 @@ void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& set
                 {
                     Cluster[i][j] = Cluster_raw[i][j]/cluster_max_2d;
                 }
-                Cluster_x[i] = Cluster_xRaw[i]/cluster_max;
+                Cluster_x[i] = Cluster_xRaw[i]/cluster_max_x;
             }
             for(int j = 0; j < TYSIZE; j++){
-                Cluster_y[j] = Cluster_yRaw[j]/cluster_max;
+                Cluster_y[j] = Cluster_yRaw[j]/cluster_max_y;
             }
 
             if (genericCPE != nullptr) {
@@ -745,6 +748,7 @@ void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& set
     }
 
     printf("total cluster count = %i\n",count);
+    Event_idx++;
 
 }
 DEFINE_FWK_MODULE(ExtractCPEInfo);
