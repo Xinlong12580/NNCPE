@@ -13,7 +13,9 @@ echo "CMSSW: "$CMSSW_BASE
 cd ../../
 
 # Run the step1
-cmsDriver.py TTbar_14TeV_TuneCP5_cfi  -s GEN,SIM -n ${nEvents} --conditions auto:phase1_2024_realistic --beamspot DBrealistic --datatier GEN-SIM --eventcontent FEVTDEBUG --geometry DB:Extended --era Run3_2024 --relval 9000,100
+#cmsDriver.py TTbar_14TeV_TuneCP5_cfi -s GEN,SIM -n ${nEvents} --conditions auto:phase1_2024_realistic --beamspot DBrealistic --datatier GEN-SIM --eventcontent FEVTDEBUG --geometry DB:Extended --era Run3_2024 --relval 9000,100
+cmsDriver.py TTbar_14TeV_TuneCP5_cfi -s GEN,SIM -n ${nEvents} --conditions auto:phase1_2025_realistic --beamspot DBrealistic --datatier GEN-SIM --eventcontent FEVTDEBUG --geometry DB:Extended --era Run3_2025 --relval 9000,100
+
 
 echo "------------------------------------------FINISHED------------------------------------------"
 ls -alh
@@ -22,3 +24,7 @@ ls -alh
 pwd
 mv TTbar_14TeV_TuneCP5_cfi_GEN_SIM.root TTbar_14TeV_TuneCP5_cfi_GEN_SIM_${i}.root
 ls -alh
+
+touch TTbar_14TeV_TuneCP5_cfi_GEN_SIM_${i}_DONE.txt
+
+xrdcp TTbar_14TeV_TuneCP5_cfi_GEN_SIM_${i}.root root://cmseosmgm01.fnal.gov:1094//store/user/ammitra/NNCPE
