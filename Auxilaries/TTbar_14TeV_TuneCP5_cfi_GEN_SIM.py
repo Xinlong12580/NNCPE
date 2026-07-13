@@ -7,6 +7,7 @@ import FWCore.ParameterSet.Config as cms
 
 from Configuration.Eras.Era_Run3_2025_cff import Run3_2025
 
+
 process = cms.Process('SIM',Run3_2025)
 
 # import of standard configurations
@@ -24,6 +25,21 @@ process.load('GeneratorInterface.Core.genFilterSummary_cff')
 process.load('Configuration.StandardSequences.SimIdeal_cff')
 process.load('Configuration.StandardSequences.EndOfProcess_cff')
 process.load('Configuration.StandardSequences.FrontierConditions_GlobalTag_cff')
+
+process.load("Configuration.StandardSequences.Services_cff")
+baseSeed = 12345
+
+process.RandomNumberGeneratorService.generator.initialSeed = (
+    cms.untracked.uint32(baseSeed)
+)
+
+process.RandomNumberGeneratorService.VtxSmeared.initialSeed = (
+    cms.untracked.uint32(baseSeed + 1)
+)
+
+process.RandomNumberGeneratorService.g4SimHits.initialSeed = (
+    cms.untracked.uint32(baseSeed + 2)
+)
 
 process.maxEvents = cms.untracked.PSet(
     input = cms.untracked.int32(10),
