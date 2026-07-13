@@ -8,7 +8,7 @@ from Configuration.AlCa.GlobalTag import GlobalTag
 
 from Configuration.Eras.Era_Run3_2025_cff import Run3_2025
 
-n_events = -1
+n_events = 100
 
 
 
@@ -53,7 +53,7 @@ process.source = cms.Source("PoolSource",
   #fileNames=cms.untracked.vstring("root://cms-xrd-global.cern.ch//store/data/Run2018C/SingleMuon/RAW/v1/000/320/040/00000/407FB3FD-A78E-E811-B816-FA163E120D15.root")
   # MC
 
-fileNames=cms.untracked.vstring("file:step2_DIGI_L1_DIGI2RAW_HLT.root"),
+fileNames=cms.untracked.vstring("file:../../../merged.root"),
 #fileNames=cms.untracked.vstring("file:TTbar_13TeV_TuneCUETP8M1_cfi_MC_500_phase1_2018_realistic.root"),
 #eventsToSkip=cms.untracked.VEventRange('1:8-1:10','1:67-1:69','1:388-1:390'),
 #eventsToSkip=cms.untracked.VEventRange('1:94-1:96','1:173-1:175'),
@@ -77,8 +77,10 @@ process.ExtractCPEInfo = cms.EDAnalyzer('ExtractCPEInfo',
  associatePixel = cms.bool(True),
  useGenericCPE = cms.bool(True),
  useTemplateCPE = cms.bool(True),
+ useNNCPE = cms.bool(True),
  genericCPE = cms.ESInputTag("", "PixelCPEGeneric"),
  templateCPE = cms.ESInputTag("", "PixelCPEClusterRepair"),
+ nnCPE = cms.ESInputTag("", "PixelCPENNReco"),
  pixelSimLinkSrc = cms.string("simSiPixelDigis"),
  stripSimLinkSrc = cms.string("simSiStripDigis"),
  ROUList = cms.vstring(

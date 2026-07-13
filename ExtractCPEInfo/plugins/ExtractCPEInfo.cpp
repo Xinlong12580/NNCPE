@@ -178,18 +178,30 @@ private:
     float Template_dy[SIMHITPERCLMAX];
     float Template_dyPull[SIMHITPERCLMAX];
 
+    float NN_x;
+    float NN_y;
+    float NN_xError;
+    float NN_yError;
+    float NN_dx[SIMHITPERCLMAX];
+    float NN_dxPull[SIMHITPERCLMAX];
+    float NN_dy[SIMHITPERCLMAX];
+    float NN_dyPull[SIMHITPERCLMAX];
+    
     edm::InputTag fTrackCollectionLabel;
     int count=0;
 
     bool useGenericCPE_;
     bool useTemplateCPE_;
+    bool useNNCPE_;
     edm::ESInputTag genericCPELabel_;
     edm::ESInputTag templateCPELabel_;
+    edm::ESInputTag nnCPELabel_;
 
     edm::EDGetTokenT<std::vector<reco::Track>> TrackToken;
     edm::ESGetToken<TrackerTopology, TrackerTopologyRcd> TrackerTopoToken;
     edm::ESGetToken<PixelClusterParameterEstimator, TkPixelCPERecord> GenericCPEToken;
     edm::ESGetToken<PixelClusterParameterEstimator, TkPixelCPERecord> TemplateCPEToken;
+    edm::ESGetToken<PixelClusterParameterEstimator, TkPixelCPERecord> NNCPEToken;
     TrackerHitAssociator::Config trackerHitAssociatorConfig_;
 };
 
@@ -205,8 +217,10 @@ void ExtractCPEInfo::fillDescriptions(edm::ConfigurationDescriptions& descriptio
     desc.add<bool>("associateStrip");
     desc.add<bool>("useGenericCPE", true);
     desc.add<bool>("useTemplateCPE", false);
+    desc.add<bool>("useNNCPE", false);
     desc.add<edm::ESInputTag>("genericCPE", edm::ESInputTag("", "PixelCPEGeneric"));
     desc.add<edm::ESInputTag>("templateCPE", edm::ESInputTag("", "PixelCPEClusterRepair"));
+    desc.add<edm::ESInputTag>("nnCPE", edm::ESInputTag("", "PixelCPENN"));
     descriptions.addWithDefaultLabel(desc);
 }
 
@@ -253,6 +267,10 @@ void ExtractCPEInfo::ResetVars(){
     Template_y = 0.f;
     Template_xError = 0.f;
     Template_yError = 0.f;
+    NN_x = 0.f;
+    NN_y = 0.f;
+    NN_xError = 0.f;
+    NN_yError = 0.f;
 
     for(int i = 0; i < TXSIZE; i++){ 
         Cluster_xRaw[i] = 0.f;
@@ -278,6 +296,10 @@ void ExtractCPEInfo::ResetVars(){
         Template_dxPull[i] = std::numeric_limits<float>::max();
         Template_dy[i] = std::numeric_limits<float>::max();
         Template_dyPull[i] = std::numeric_limits<float>::max();
+        NN_dx[i] = std::numeric_limits<float>::max();
+        NN_dxPull[i] = std::numeric_limits<float>::max();
+        NN_dy[i] = std::numeric_limits<float>::max();
+        NN_dyPull[i] = std::numeric_limits<float>::max();
     }
 
 }
@@ -287,13 +309,15 @@ ExtractCPEInfo::ExtractCPEInfo(const edm::ParameterSet& config)
 trackerHitAssociatorConfig_(config, consumesCollector()) {
     useGenericCPE_ = config.getParameter<bool>("useGenericCPE");
     useTemplateCPE_ = config.getParameter<bool>("useTemplateCPE");
+    useNNCPE_ = config.getParameter<bool>("useNNCPE");
     genericCPELabel_ = config.getParameter<edm::ESInputTag>("genericCPE");
     templateCPELabel_ = config.getParameter<edm::ESInputTag>("templateCPE");
+    nnCPELabel_ = config.getParameter<edm::ESInputTag>("nnCPE");
 
-    if (!useGenericCPE_ && !useTemplateCPE_) {
+    if (!useGenericCPE_ && !useTemplateCPE_ && !useNNCPE_) {
         throw cms::Exception("Configuration")
             << "ExtractCPEInfo requires at least one CPE enabled. "
-            << "Set useGenericCPE=True and/or useTemplateCPE=True.";
+            << "Set useGenericCPE=True and/or useTemplateCPE=True and/or useNNCPE=True.";
     }
 
     TrackToken              = consumes <std::vector<reco::Track>>(fTrackCollectionLabel) ;
@@ -303,6 +327,9 @@ trackerHitAssociatorConfig_(config, consumesCollector()) {
     }
     if (useTemplateCPE_) {
         TemplateCPEToken = esConsumes(templateCPELabel_);
+    }
+    if (useNNCPE_) {
+        NNCPEToken = esConsumes(nnCPELabel_);
     }
     ResetVars();
 
@@ -350,6 +377,11 @@ trackerHitAssociatorConfig_(config, consumesCollector()) {
     out_Tree->Branch("Template_xError", &Template_xError, "Template_xError/F");
     out_Tree->Branch("Template_yError", &Template_yError, "Template_yError/F");
 
+    out_Tree->Branch("NN_x", &NN_x, "NN_x/F");
+    out_Tree->Branch("NN_y", &NN_y, "NN_y/F");
+    out_Tree->Branch("NN_xError", &NN_xError, "NN_xError/F");
+    out_Tree->Branch("NN_yError", &NN_yError, "NN_yError/F");
+    
     out_Tree->Branch("nSimHit", &nSimHit, "nSimHit/I");
     out_Tree->Branch("SimHit_x", &SimHit_x, "SimHit_x[nSimHit]/F");
     out_Tree->Branch("SimHit_y", &SimHit_y, "SimHit_y[nSimHit]/F");
@@ -361,6 +393,10 @@ trackerHitAssociatorConfig_(config, consumesCollector()) {
     out_Tree->Branch("Template_dy", &Template_dy, "Template_dy[nSimHit]/F");
     out_Tree->Branch("Template_dxPull", &Template_dxPull, "Template_dxPull[nSimHit]/F");
     out_Tree->Branch("Template_dyPull", &Template_dyPull, "Template_dyPull[nSimHit]/F");
+    out_Tree->Branch("NN_dx", &NN_dx, "NN_dx[nSimHit]/F");
+    out_Tree->Branch("NN_dy", &NN_dy, "NN_dy[nSimHit]/F");
+    out_Tree->Branch("NN_dxPull", &NN_dxPull, "NN_dxPull[nSimHit]/F");
+    out_Tree->Branch("NN_dyPull", &NN_dyPull, "NN_dyPull[nSimHit]/F");
 }
 
 
@@ -386,8 +422,10 @@ void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& set
 
     edm::ESHandle<PixelClusterParameterEstimator> genericCPEHandle;
     edm::ESHandle<PixelClusterParameterEstimator> templateCPEHandle;
+    edm::ESHandle<PixelClusterParameterEstimator> nnCPEHandle;
     const PixelClusterParameterEstimator* genericCPE = nullptr;
     const PixelClusterParameterEstimator* templateCPE = nullptr;
+    const PixelClusterParameterEstimator* nnCPE = nullptr;
     if (useGenericCPE_) {
         genericCPEHandle = setup.getHandle(GenericCPEToken);
         if (!genericCPEHandle.isValid()) {
@@ -404,6 +442,15 @@ void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& set
         }
         templateCPE = templateCPEHandle.product();
     }
+    if (useNNCPE_) {
+        nnCPEHandle = setup.getHandle(NNCPEToken);
+        if (!nnCPEHandle.isValid()) {
+            cout << "nn PixelClusterParameterEstimator is not valid" << endl;
+            return;
+        }
+        nnCPE = nnCPEHandle.product();
+    }
+
 
     //get the map
     edm::Handle<reco::TrackCollection> tracks;
@@ -711,6 +758,14 @@ void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& set
                 Template_yError = std::sqrt(std::max(0.f, std::get<1>(templateParams).yy()));
             }
 
+            if (nnCPE != nullptr) {
+                auto const nnParams = nnCPE->getParameters(*clustp, *geomdetunit, ltp);
+                NN_x = std::get<0>(nnParams).x();
+                NN_y = std::get<0>(nnParams).y();
+                NN_xError = std::sqrt(std::max(0.f, std::get<1>(nnParams).xx()));
+                NN_yError = std::sqrt(std::max(0.f, std::get<1>(nnParams).yy()));
+            }
+
             //get sim hits
 
             std::vector<PSimHit> vec_simhits_assoc;
@@ -731,15 +786,23 @@ void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& set
             } // end sim hit loop
             nSimHit = iSimHit;
             for(int i = 0;i<nSimHit;i++){
-                Generic_dx[i] = Generic_x - SimHit_x[i];
-                Generic_dy[i] = Generic_y - SimHit_y[i];
-                Generic_dxPull[i] = Generic_dx[i]/std::max(Generic_xError, 1.0e-12f);
-                Generic_dyPull[i] = Generic_dy[i]/std::max(Generic_yError, 1.0e-12f);
+                if (genericCPE != nullptr) {
+                    Generic_dx[i] = Generic_x - SimHit_x[i];
+                    Generic_dy[i] = Generic_y - SimHit_y[i];
+                    Generic_dxPull[i] = Generic_dx[i]/std::max(Generic_xError, 1.0e-12f);
+                    Generic_dyPull[i] = Generic_dy[i]/std::max(Generic_yError, 1.0e-12f);
+                }
                 if (templateCPE != nullptr) {
                     Template_dx[i] = Template_x - SimHit_x[i];
                     Template_dy[i] = Template_y - SimHit_y[i];
                     Template_dxPull[i] = Template_dx[i]/std::max(Template_xError, 1.0e-12f);
                     Template_dyPull[i] = Template_dy[i]/std::max(Template_yError, 1.0e-12f);
+                }
+                if (nnCPE != nullptr) {
+                    NN_dx[i] = NN_x - SimHit_x[i];
+                    NN_dy[i] = NN_y - SimHit_y[i];
+                    NN_dxPull[i] = NN_dx[i]/std::max(NN_xError, 1.0e-12f);
+                    NN_dyPull[i] = NN_dy[i]/std::max(NN_yError, 1.0e-12f);
                 }
             }
             count++;
