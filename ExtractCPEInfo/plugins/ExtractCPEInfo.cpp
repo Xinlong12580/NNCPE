@@ -643,8 +643,8 @@ void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& set
                 int irow = int(pix.x) - row_offset + offset_x; // place the cluster center in the middle of the input matrix (TXSIZE/2, TYSIZE/2)
                 int icol = int(pix.y) - col_offset + offset_y;
 
-                if ((irow >= mrow+offset_x) || (icol >= mcol+offset_y)){
-                    printf("irow or icol exceeded, SKIPPING. irow = %i, mrow = %i, offset_x = %i,icol = %i, mcol = %i, offset_y = %i\n",irow,mrow,offset_x,icol,mcol,offset_y);
+                if ((irow < 0) || (irow >= TXSIZE) || (icol < 0) || (icol >= TYSIZE)){
+                    printf("irow or icol out of bounds after centering, SKIPPING. irow = %i, icol = %i, offset_x = %i, offset_y = %i\n",irow,icol,offset_x,offset_y);
                     continue;
                 }
                 clusbuf_temp[irow][icol] = float(pix.adc)/CHARGENORM; //pix.adc is actually in units of electrons
@@ -657,6 +657,17 @@ void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& set
                 double_row_centered[i] = double_row[i] + offset_x;
                 double_col_centered[i] = double_col[i] + offset_y;
             }
+
+            // A wide pixel landing exactly on the last bin has no room for its second half
+            // (would need index TXSIZE/TYSIZE, one past the end of Cluster_raw) -- skip the cluster.
+            bool wideAtEdge = false;
+            for (int i = 0; i < n_double_x && !wideAtEdge; ++i) {
+                if (double_row_centered[i] == TXSIZE - 1) wideAtEdge = true;
+            }
+            for (int i = 0; i < n_double_y && !wideAtEdge; ++i) {
+                if (double_col_centered[i] == TYSIZE - 1) wideAtEdge = true;
+            }
+            if (wideAtEdge) continue;
 
             //Expand double width rows
             int k=0,m=0;
