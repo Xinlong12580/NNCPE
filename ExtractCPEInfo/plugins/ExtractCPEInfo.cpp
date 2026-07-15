@@ -658,6 +658,17 @@ void ExtractCPEInfo::analyze(const edm::Event& event, const edm::EventSetup& set
                 double_col_centered[i] = double_col[i] + offset_y;
             }
 
+            // A wide pixel landing exactly on the last bin has no room for its second half
+            // (would need index TXSIZE/TYSIZE, one past the end of Cluster_raw) -- skip the cluster.
+            bool wideAtEdge = false;
+            for (int i = 0; i < n_double_x && !wideAtEdge; ++i) {
+                if (double_row_centered[i] == TXSIZE - 1) wideAtEdge = true;
+            }
+            for (int i = 0; i < n_double_y && !wideAtEdge; ++i) {
+                if (double_col_centered[i] == TYSIZE - 1) wideAtEdge = true;
+            }
+            if (wideAtEdge) continue;
+
             //Expand double width rows
             int k=0,m=0;
             for(int i=0;i<TXSIZE;i++){
