@@ -2,12 +2,12 @@
 # using: 
 # Revision: 1.19 
 # Source: /local/reps/CMSSW/CMSSW/Configuration/Applications/python/ConfigBuilder.py,v 
-# with command line options: step2 -s DIGI:pdigi_valid,L1,DIGI2RAW,HLT:@relval2024 --conditions auto:phase1_2024_realistic --datatier GEN-SIM-DIGI-RAW -n 10 --eventcontent FEVTDEBUGHLT --geometry DB:Extended --era Run3_2024
+# with command line options: step2 -s DIGI:pdigi_valid,L1,DIGI2RAW,HLT:@relval2025 --conditions auto:phase1_2025_realistic --datatier GEN-SIM-DIGI-RAW -n 10 --eventcontent FEVTDEBUGHLT --geometry DB:Extended --era Run3_2025 --no_exec
 import FWCore.ParameterSet.Config as cms
 
-from Configuration.Eras.Era_Run3_2024_cff import Run3_2024
+from Configuration.Eras.Era_Run3_2025_cff import Run3_2025
 
-process = cms.Process('HLT',Run3_2024)
+process = cms.Process('HLT',Run3_2025)
 
 # import of standard configurations
 process.load('Configuration.StandardSequences.Services_cff')
@@ -54,6 +54,9 @@ process.source = cms.Source("PoolSource",
     ),
     secondaryFileNames = cms.untracked.vstring()
 )
+
+# Custom run number to avoid issues 
+process.source.setRunNumber = cms.untracked.uint32(IJOB)
 
 process.options = cms.untracked.PSet(
     IgnoreCompletely = cms.untracked.vstring(),
@@ -111,7 +114,86 @@ process.FEVTDEBUGHLToutput = cms.OutputModule("PoolOutputModule",
 # Other statements
 process.mix.digitizers = cms.PSet(process.theDigitizersValid)
 from Configuration.AlCa.GlobalTag import GlobalTag
-process.GlobalTag = GlobalTag(process.GlobalTag, 'auto:phase1_2024_realistic', '')
+process.GlobalTag = GlobalTag(process.GlobalTag, 'auto:phase1_2025_realistic', '')
+
+from CondCore.CondDB.CondDB_cfi import CondDB as CondDBSetup
+CondDBSetup.connect = cms.string('frontier://FrontierProd/CMS_CONDITIONS')
+#-------------------------------------------
+process.my2DTemplatesNum = cms.ESSource('PoolDBESSource',
+	CondDBSetup,
+	toGet = cms.VPSet(cms.PSet(
+    	record = cms.string('SiPixel2DTemplateDBObjectRcd'),
+    	tag = cms.string('SiPixel2DTemplateDBObject_phase1_38T_2025_v4'),
+    	label = cms.untracked.string('numerator')
+	))
+)
+process.es_prefer_my2DTemplatesNum = cms.ESPrefer('PoolDBESSource','my2DTemplatesNum')
+
+process.my2DTemplatesDen = cms.ESSource('PoolDBESSource',
+	CondDBSetup,
+	toGet = cms.VPSet(cms.PSet(
+    	record = cms.string('SiPixel2DTemplateDBObjectRcd'),
+    	tag = cms.string('SiPixel2DTemplateDBObject_phase1_38T_2025_v4_denominator'),
+    	label = cms.untracked.string('denominator')
+	))
+)
+process.es_prefer_my2DTemplatesDen = cms.ESPrefer('PoolDBESSource','my2DTemplatesDen')
+
+#-------------------------------------------
+process.my1DTemplates = cms.ESSource('PoolDBESSource',
+	CondDBSetup,
+	toGet = cms.VPSet(cms.PSet(
+    	record = cms.string('SiPixelTemplateDBObjectRcd'),
+    	tag = cms.string('SiPixelTemplateDBObject_phase1_38T_2025_v4b')
+	))
+)
+process.es_prefer_my1DTemplates = cms.ESPrefer('PoolDBESSource','my1DTemplates')
+#-------------------------------------------
+process.myGenErrors = cms.ESSource('PoolDBESSource',
+	CondDBSetup,
+	toGet = cms.VPSet(cms.PSet(
+    	record = cms.string('SiPixelGenErrorDBObjectRcd'),
+    	tag = cms.string('SiPixelGenErrorDBObject_phase1_38T_2025_v4b')
+	))
+)
+process.es_prefer_myGenErrors = cms.ESPrefer('PoolDBESSource','myGenErrors')
+#-------------------------------------------
+process.myLorentzAngleSim = cms.ESSource('PoolDBESSource',
+	CondDBSetup,
+	toGet = cms.VPSet(cms.PSet(
+    	record = cms.string('SiPixelLorentzAngleSimRcd'),
+    	tag = cms.string('SiPixelLorentzAngleSim_phase1_38T_2025_v4')
+	))
+)
+process.es_prefer_myLorentzAngleSim = cms.ESPrefer('PoolDBESSource','myLorentzAngleSim')
+
+#-------------------------------------------
+process.myLorentzAngle = cms.ESSource('PoolDBESSource',
+	CondDBSetup,
+	toGet = cms.VPSet(cms.PSet(
+    	record = cms.string('SiPixelLorentzAngleRcd'),
+    	tag = cms.string('SiPixelLorentzAngle_phase1_38T_2025_v4')
+	))
+)
+process.es_prefer_myLorentzAngle = cms.ESPrefer('PoolDBESSource','myLorentzAngle')
+#-------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # Path and EndPath definitions
 process.digitisation_step = cms.Path(process.pdigi_valid)
@@ -141,6 +223,17 @@ process = customizeHLTforMC(process)
 
 
 # Customisation from command line
+from HLTrigger.Configuration.common import *
+
+# Disable ClusterShapeHitFilter
+for prod in esproducers_by_type(process, 'ClusterShapeHitFilterESProducer'):
+    prod.doPixelShapeCut = False
+
+process.MessageLogger.cerr.FwkReport.reportEvery = 100; process.MessageLogger.cerr.default.limit = 10 
+process.mix.digitizers.pixel.ThresholdInElectrons_BPix_L1 = 4100. 
+process.mix.digitizers.pixel.ThresholdInElectrons_BPix_L2 = 2000.
+
+
 
 # Add early deletion of temporary data products to reduce peak memory need
 from Configuration.StandardSequences.earlyDeleteSettings_cff import customiseEarlyDelete

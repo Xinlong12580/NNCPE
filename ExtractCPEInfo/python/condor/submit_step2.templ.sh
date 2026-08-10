@@ -24,3 +24,7 @@ ls -alh
 pwd
 mv step2_DIGI_L1_DIGI2RAW_HLT.root step2_DIGI_L1_DIGI2RAW_HLT_${i}.root
 ls -alh
+
+touch step2_DIGI_L1_DIGI2RAW_HLT_${i}_DONE.txt
+
+xrdcp -f step2_DIGI_L1_DIGI2RAW_HLT_${i}.root root://cmseosmgm01.fnal.gov:1094//store/user/ammitra/NNCPE
